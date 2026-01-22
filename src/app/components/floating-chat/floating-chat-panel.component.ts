@@ -1,6 +1,6 @@
-import { Component, OnInit, ViewChild, ElementRef, AfterViewChecked, HostListener, OnDestroy } from '@angular/core';
+import { Component, OnInit, ViewChild, ElementRef, AfterViewChecked, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormControl, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
+import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -8,13 +8,15 @@ import { MatInputModule } from '@angular/material/input';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { MatSelectModule } from '@angular/material/select';
 import { CdkDrag, CdkDragHandle } from '@angular/cdk/drag-drop';
-import { ChatToggleService, ChatState } from '../../services/chat-toggle.service';
+import { ChatToggleService, ChatState, ChatSize } from '../../services/chat-toggle.service';
 import { ChatService } from '../../services/chat.service';
-import { VoiceService, VoiceState } from '../../services/voice.service';
 import { Message } from '../../models/message.model';
-import { Observable, Subject } from 'rxjs';
+import { Observable } from 'rxjs';
+import { FormsModule } from '@angular/forms';
+import { MatSelectModule } from '@angular/material/select';
+import { VoiceService, VoiceState } from '../../services/voice.service';
+import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 
 @Component({
@@ -38,7 +40,7 @@ import { takeUntil } from 'rxjs/operators';
   templateUrl: './floating-chat-panel.component.html',
   styleUrls: ['./floating-chat-panel.component.scss']
 })
-export class FloatingChatPanelComponent implements OnInit, AfterViewChecked, OnDestroy {
+export class FloatingChatPanelComponent implements OnInit, AfterViewChecked {
   @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
   @ViewChild('chatPanel') private chatPanel!: ElementRef;
   @ViewChild('messageInput') private messageInput!: ElementRef;
@@ -47,16 +49,10 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked, OnD
   state$: Observable<ChatState>;
   messages$: Observable<Message[]>;
   isLoading$: Observable<boolean>;
-  voiceState$: Observable<VoiceState>;
-
   messageControl = new FormControl('', {
     validators: [Validators.required, Validators.maxLength(2000)],
-    updateOn: 'change'
+    updateOn: 'change' // Keep immediate updates but optimize rendering
   });
-
-  // Voice properties
-  selectedLanguage = 'en-US'; // Will be set in ngOnInit
-  private destroy$ = new Subject<void>();
 
   // Resize state
   isResizing = false;
@@ -67,6 +63,7 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked, OnD
   startHeight = 0;
 
   // Drag state
+  isDragging = false;
   dragPosition = { x: 20, y: 20 };
 
   // Scroll state
@@ -78,13 +75,30 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked, OnD
   // Context toggle
   useContext = true;
 
-  // Quick actions
+  // Quick actions toggle
   showQuickActions = false;
+
+  // Quick actions list
   quickActions = [
     { label: 'Show Tables', prompt: 'Show me all tables in the database', icon: 'storage' },
     { label: 'Customer Info', prompt: 'Show customer information', icon: 'people' },
     { label: 'Recent Orders', prompt: 'Show recent orders from the last 7 days', icon: 'receipt' },
+    { label: 'Inventory', prompt: 'Check inventory status for products', icon: 'inventory' },
+    { label: 'SQL Help', prompt: 'Help with SQL queries', icon: 'code' }
   ];
+
+  // Voice properties
+  voiceState$: Observable<VoiceState>;
+  selectedLanguage = 'en-US';
+  currentVoiceState: VoiceState = {
+    isRecording: false,
+    isProcessing: false,
+    transcript: '',
+    interimTranscript: '',
+    language: 'en-US',
+    error: null
+  };
+  private destroy$ = new Subject<void>();
 
   constructor(
     private chatToggleService: ChatToggleService,
@@ -99,45 +113,37 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked, OnD
   }
 
   ngOnInit(): void {
-    // Set default language based on browser
-    this.selectedLanguage = this.voiceService.getDefaultLanguage();
-
+    // Load saved position if available
     const state = this.chatToggleService.getState();
     this.dragPosition = state.position;
 
-    this.isLoading$.pipe(takeUntil(this.destroy$)).subscribe(loading => {
+    // Subscribe to loading state
+    this.isLoading$.subscribe(loading => {
       this.isLoading = loading;
     });
 
-    this.messages$.pipe(takeUntil(this.destroy$)).subscribe(messages => {
+    // Subscribe to messages to detect changes
+    this.messages$.subscribe(messages => {
       if (messages.length > this.previousMessageCount) {
         this.previousMessageCount = messages.length;
+        // Only auto-scroll if user hasn't manually scrolled up
         if (!this.isUserScrolling) {
           this.shouldAutoScroll = true;
+          this.voiceService.clearTranscript();
         }
       }
     });
-
-    // Subscribe to voice state - KEY FIX: Only update on final transcript
     this.voiceState$.pipe(takeUntil(this.destroy$)).subscribe(voiceState => {
-      // Show combined transcript (final + interim) while recording
-      if (voiceState.isRecording) {
-        const displayText = voiceState.interimTranscript
-          ? (voiceState.transcript + ' ' + voiceState.interimTranscript).trim()
-          : voiceState.transcript;
-
-        if (displayText) {
-          this.messageControl.setValue(displayText, { emitEvent: false });
-        }
-      }
-      // When recording stops, only use final transcript
-      else if (voiceState.transcript && !voiceState.isRecording) {
+      this.currentVoiceState = voiceState;
+      if (voiceState.transcript && !voiceState.isRecording) {
         this.messageControl.setValue(voiceState.transcript, { emitEvent: false });
+        this.adjustTextareaHeight();
       }
     });
   }
 
   ngAfterViewChecked(): void {
+    // Only auto-scroll when new messages arrive and user hasn't scrolled up
     if (this.shouldAutoScroll && !this.isUserScrolling) {
       setTimeout(() => {
         this.scrollToBottom();
@@ -145,26 +151,10 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked, OnD
       }, 50);
     }
   }
-
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
     this.voiceService.stopRecording();
-  }
-
-  // Voice methods
-  toggleVoiceRecording(): void {
-    if (this.voiceService.isRecording()) {
-      this.voiceService.stopRecording();
-    } else {
-      // Clear input before starting new recording
-      this.messageControl.setValue('', { emitEvent: false });
-      this.voiceService.startRecording(this.selectedLanguage);
-    }
-  }
-
-  clearVoiceError(): void {
-    this.voiceService.clearTranscript();
   }
 
   closeChat(event?: MouseEvent): void {
@@ -177,6 +167,7 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked, OnD
   }
 
   onOverlayClick(event: MouseEvent): void {
+    // Only close when clicking the overlay, not when clicking the chat panel
     event.stopPropagation();
     this.closeChat();
   }
@@ -187,7 +178,11 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked, OnD
       event.preventDefault();
     }
     const currentState = this.chatToggleService.getState();
-    this.chatToggleService.setSize(currentState.size === 'minimized' ? 'normal' : 'minimized');
+    if (currentState.size === 'minimized') {
+      this.chatToggleService.setSize('normal');
+    } else {
+      this.chatToggleService.setSize('minimized');
+    }
   }
 
   maximizeChat(event?: MouseEvent): void {
@@ -196,7 +191,11 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked, OnD
       event.preventDefault();
     }
     const currentState = this.chatToggleService.getState();
-    this.chatToggleService.setSize(currentState.size === 'fullscreen' ? 'normal' : 'fullscreen');
+    if (currentState.size === 'fullscreen') {
+      this.chatToggleService.setSize('normal');
+    } else {
+      this.chatToggleService.setSize('fullscreen');
+    }
   }
 
   expandChat(event?: MouseEvent): void {
@@ -205,35 +204,63 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked, OnD
       event.preventDefault();
     }
     const currentState = this.chatToggleService.getState();
-    this.chatToggleService.setSize(currentState.size === 'expanded' ? 'normal' : 'expanded');
+    if (currentState.size === 'expanded') {
+      this.chatToggleService.setSize('normal');
+    } else {
+      this.chatToggleService.setSize('expanded');
+    }
+  }
+
+  restoreChat(): void {
+    this.chatToggleService.setSize('normal');
   }
 
   sendMessage(): void {
-    // Stop any ongoing recording first
-    this.voiceService.stopRecording();
-
     if (this.messageControl.valid && this.messageControl.value?.trim()) {
       const message = this.messageControl.value.trim();
 
-      // Clear input
-      this.messageControl.setValue('', { emitEvent: false });
+      // Store reference to input element before any changes
+      const inputElement = this.messageInput?.nativeElement;
+
+      // Clear the input immediately without triggering validations
+      this.messageControl.setValue('', {
+        emitEvent: false,
+        emitModelToViewChange: true,
+        emitViewToModelChange: false
+      });
+
+      // Mark as pristine to prevent validation flicker
       this.messageControl.markAsPristine();
       this.messageControl.markAsUntouched();
 
-      // Clear voice transcript
-      this.voiceService.clearTranscript();
+      // Reset textarea height to default
+      if (inputElement) {
+        inputElement.style.height = '52px';
+      }
 
+      // Force scroll to bottom when user sends a message
       this.isUserScrolling = false;
       this.shouldAutoScroll = true;
 
       this.chatService.sendMessage(message, this.useContext).subscribe({
-        next: () => {
+        next: (response) => {
+          // Message sent and response received successfully
           this.scrollToBottom();
-          this.messageInput?.nativeElement?.focus();
+
+          // Restore focus after processing completes
+          if (inputElement) {
+            inputElement.focus();
+          }
         },
-        error: (error: any) => {
+        error: (error) => {
           console.error('Chat error:', error);
+          // Error message is already handled in the service
           this.scrollToBottom();
+
+          // Restore focus even on error
+          if (inputElement) {
+            inputElement.focus();
+          }
         }
       });
     }
@@ -244,7 +271,7 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked, OnD
   }
 
   clearChat(): void {
-    if (confirm('Clear chat history?')) {
+    if (confirm('Are you sure you want to clear the chat history?')) {
       this.chatService.clearMessages();
     }
   }
@@ -261,31 +288,105 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked, OnD
     try {
       if (this.scrollContainer?.nativeElement) {
         const element = this.scrollContainer.nativeElement;
+        // Use requestAnimationFrame for smoother scrolling
         requestAnimationFrame(() => {
           element.scrollTop = element.scrollHeight;
         });
       }
     } catch (err) {
-      console.debug('Scroll error:', err);
+      // Ignore scroll errors - this can happen during component initialization
+      console.debug('Scroll error (non-critical):', err);
+    }
+  }
+
+  private scrollToBottomSmooth(): void {
+    try {
+      if (this.scrollContainer?.nativeElement) {
+        const element = this.scrollContainer.nativeElement;
+        element.scrollTo({
+          top: element.scrollHeight,
+          behavior: 'smooth'
+        });
+      }
+    } catch (err) {
+      console.debug('Scroll error (non-critical):', err);
+    }
+  }
+
+  onKeyPress(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      this.sendMessage();
     }
   }
 
   onKeyDown(event: KeyboardEvent): void {
+    // Handle Enter key - send message if not holding Shift
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
+
+      // Only send if not currently loading and has valid input
       if (!this.isLoading && this.messageControl.valid && this.messageControl.value?.trim()) {
         this.sendMessage();
       }
     }
+    // Shift+Enter allows new line
+  }
+
+  adjustTextareaHeight(): void {
+    const textarea = this.messageInput?.nativeElement;
+    if (!textarea) return;
+
+    // Reset height to auto to get the correct scrollHeight
+    requestAnimationFrame(() => {
+      textarea.style.height = 'auto';
+
+      // Calculate new height based on content
+      const newHeight = Math.min(Math.max(textarea.scrollHeight, 52), 120);
+
+      // Apply new height smoothly
+      textarea.style.height = `${newHeight}px`;
+    });
+  }
+
+  getInputHint(): string {
+    if (this.isLoading) {
+      return 'Processing your request... Click Stop to cancel';
+    }
+    return 'Press Enter to send, Shift+Enter for new line';
+  }
+
+  getSendButtonTooltip(): string {
+    if (this.isLoading) {
+      return 'Please wait...';
+    }
+    if (this.messageControl.invalid || !this.messageControl.value?.trim()) {
+      return 'Type a message to send';
+    }
+    return 'Send message (Enter)';
   }
 
   onScroll(event: Event): void {
     const element = event.target as HTMLElement;
-    const isAtBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 50;
-    this.isUserScrolling = !isAtBottom;
-    this.shouldAutoScroll = isAtBottom;
+    const scrollTop = element.scrollTop;
+    const scrollHeight = element.scrollHeight;
+    const clientHeight = element.clientHeight;
+
+    // Check if user is at the bottom (within 50px threshold)
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+
+    // If user scrolls up, mark as user scrolling
+    if (!isAtBottom) {
+      this.isUserScrolling = true;
+      this.shouldAutoScroll = false;
+    } else {
+      // User scrolled back to bottom, re-enable auto-scroll
+      this.isUserScrolling = false;
+      this.shouldAutoScroll = false; // Will be set to true when new message arrives
+    }
   }
 
+  // Resize handling
   startResize(event: MouseEvent, direction: string): void {
     event.preventDefault();
     event.stopPropagation();
@@ -307,6 +408,7 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked, OnD
     let newWidth = this.startWidth;
     let newHeight = this.startHeight;
 
+    // Handle different resize directions
     if (this.resizeDirection.includes('w')) {
       newWidth = Math.max(300, Math.min(window.innerWidth * 0.9, this.startWidth - deltaX));
     }
@@ -329,15 +431,51 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked, OnD
     this.resizeDirection = '';
   }
 
+  // Drag handling
   onDragEnded(event: any): void {
     this.dragPosition = event.source.getFreeDragPosition();
     this.chatToggleService.updatePosition(this.dragPosition.x, this.dragPosition.y);
   }
 
+  // Quick actions
   executeQuickAction(prompt: string): void {
-    if (prompt?.trim()) {
+    if (prompt && prompt.trim()) {
       this.messageControl.setValue(prompt.trim());
       this.sendMessage();
     }
+  }
+
+  toggleVoiceRecording(): void {
+    if (this.currentVoiceState.isRecording) {
+      this.voiceService.stopRecording();
+    } else {
+      this.voiceService.startRecording(this.selectedLanguage);
+    }
+  }
+
+  onLanguageChange(): void {
+    if (this.currentVoiceState.isRecording) {
+      this.voiceService.stopRecording();
+      setTimeout(() => {
+        this.voiceService.startRecording(this.selectedLanguage);
+      }, 200);
+    }
+  }
+
+  onTranscriptChange(_event: any): void {
+    const transcriptValue = this.currentVoiceState.transcript;
+    if (transcriptValue && this.messageInput?.nativeElement) {
+      if (this.messageInput.nativeElement.value !== transcriptValue) {
+        this.messageControl.setValue(transcriptValue, { emitEvent: false });
+      }
+    }
+  }
+
+  clearVoiceError(): void {
+    this.voiceService.clearTranscript();
+  }
+
+  getLanguages(): { [key: string]: string } {
+    return this.voiceService.getSupportedLanguages();
   }
 }

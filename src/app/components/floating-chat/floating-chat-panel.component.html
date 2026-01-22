@@ -1,10 +1,10 @@
-<!-- Backdrop overlay -->
+<!-- Backdrop overlay with blur effect -->
 <div class="chat-panel-overlay"
      [class.open]="isOpen$ | async"
      [class.fullscreen]="(state$ | async)?.size === 'fullscreen'"
      (click)="onOverlayClick($event)"></div>
 
-<!-- Chat Panel -->
+<!-- Draggable and Resizable Chat Panel -->
 <div class="chat-panel"
      #chatPanel
      cdkDrag
@@ -30,7 +30,7 @@
     <div class="resize-handle resize-se" (mousedown)="startResize($event, 'se')"></div>
   }
 
-  <!-- Chat Header -->
+  <!-- Chat Header with drag handle -->
   <div class="chat-header" cdkDragHandle>
     <div class="header-left">
       <mat-icon class="support-icon">support_agent</mat-icon>
@@ -43,28 +43,46 @@
       </div>
     </div>
     <div class="header-actions">
-      <button mat-icon-button (click)="exportChat()" matTooltip="Export Chat" class="header-btn">
+      <button mat-icon-button 
+              (click)="exportChat()" 
+              matTooltip="Export Chat" 
+              class="header-btn">
         <mat-icon>download</mat-icon>
       </button>
-      <button mat-icon-button (click)="clearChat()" matTooltip="Clear conversation" class="header-btn">
-        <mat-icon>refresh</mat-icon>
+      <button mat-icon-button 
+              (click)="clearChat()" 
+              matTooltip="Clear conversation " 
+              class="header-btn">
+         <mat-icon>refresh</mat-icon>
       </button>
-      <button mat-icon-button (click)="minimizeChat($event)"
-              [matTooltip]="(state$ | async)?.size === 'minimized' ? 'Restore' : 'Minimize'"
+              <!-- <button mat-icon-button 
+                (click)="clearChat()"
+                matTooltip="Clear conversation"
+                class="action-btn clear-btn">
+          <mat-icon>refresh</mat-icon>
+        </button> -->
+      <button mat-icon-button 
+              (click)="minimizeChat($event)" 
+              [matTooltip]="(state$ | async)?.size === 'minimized' ? 'Restore' : 'Minimize'" 
               class="header-btn">
         <mat-icon>{{ (state$ | async)?.size === 'minimized' ? 'add' : 'remove' }}</mat-icon>
       </button>
-      <button mat-icon-button (click)="expandChat($event)"
-              [matTooltip]="(state$ | async)?.size === 'expanded' ? 'Normal Size' : 'Expand'"
+      <button mat-icon-button 
+              (click)="expandChat($event)" 
+              [matTooltip]="(state$ | async)?.size === 'expanded' ? 'Normal Size' : 'Expand'" 
               class="header-btn">
         <mat-icon>{{ (state$ | async)?.size === 'expanded' ? 'close_fullscreen' : 'open_in_full' }}</mat-icon>
       </button>
-      <button mat-icon-button (click)="maximizeChat($event)"
-              [matTooltip]="(state$ | async)?.size === 'fullscreen' ? 'Exit Fullscreen' : 'Fullscreen'"
+      <button mat-icon-button 
+              (click)="maximizeChat($event)" 
+              [matTooltip]="(state$ | async)?.size === 'fullscreen' ? 'Exit Fullscreen' : 'Fullscreen'" 
               class="header-btn">
         <mat-icon>{{ (state$ | async)?.size === 'fullscreen' ? 'fullscreen_exit' : 'fullscreen' }}</mat-icon>
       </button>
-      <button mat-icon-button (click)="closeChat($event)" matTooltip="Close" class="header-btn close-btn">
+      <button mat-icon-button 
+              (click)="closeChat($event)" 
+              matTooltip="Close" 
+              class="header-btn close-btn">
         <mat-icon>close</mat-icon>
       </button>
     </div>
@@ -92,6 +110,14 @@
             <mat-icon>receipt</mat-icon>
             Recent Orders
           </button>
+          <button class="quick-btn" (click)="executeQuickAction('Check inventory status for products')">
+            <mat-icon>inventory</mat-icon>
+            Inventory Status
+          </button>
+          <button class="quick-btn" (click)="executeQuickAction('Help with SQL queries')">
+            <mat-icon>code</mat-icon>
+            SQL Help
+          </button>
         </div>
       </div>
     }
@@ -107,6 +133,8 @@
           <div class="message-content" [class.error-content]="message.isError">
             {{ message.content }}
           </div>
+          
+          <!-- Metadata Display -->
           @if (message.metadata && message.role === 'assistant') {
             <div class="message-metadata">
               @if (message.metadata.executionTime) {
@@ -115,8 +143,33 @@
                   {{ message.metadata.executionTime }}ms
                 </span>
               }
+              @if (message.metadata.tablesUsed && message.metadata.tablesUsed.length > 0) {
+                <span class="metadata-chip" matTooltip="Tables Used">
+                  <mat-icon>table_chart</mat-icon>
+                  {{ message.metadata.tablesUsed.join(', ') }}
+                </span>
+              }
+              @if (message.metadata.tablesUsed && message.metadata.tablesUsed.length === 0) {
+                <span class="metadata-chip warning" matTooltip="No database verification">
+                  <mat-icon>warning</mat-icon>
+                  Not verified
+                </span>
+              }
+              @if (message.metadata.hasContext) {
+                <span class="metadata-chip" matTooltip="Context Used">
+                  <mat-icon>history</mat-icon>
+                  Context
+                </span>
+              }
+              @if (message.metadata.cacheHit) {
+                <span class="metadata-chip" matTooltip="Cached Response">
+                  <mat-icon>cached</mat-icon>
+                  Cached
+                </span>
+              }
             </div>
           }
+          
           <div class="message-time">
             {{ message.timestamp | date:'HH:mm' }}
           </div>
@@ -146,21 +199,48 @@
   </div>
 
   <!-- Input Section -->
+  <!-- Input Section -->
   <div class="input-section">
     <!-- Action Buttons Row -->
     <div class="input-actions-row">
       <div class="left-actions">
+        <!-- Voice Recording Button -->
         <button mat-icon-button
-                (click)="toggleContext()"
-                [matTooltip]="useContext ? 'Disable context' : 'Enable context'"
+                (click)="toggleVoiceRecording()"
+                [matTooltip]="(voiceState$ | async)?.isRecording ? 'Stop recording' : 'Start voice recording'"
+                [class.voice-recording]="(voiceState$ | async)?.isRecording"
+                class="action-btn voice-btn"
+                type="button">
+          <mat-icon>{{ (voiceState$ | async)?.isRecording ? 'mic' : 'mic_none' }}</mat-icon>
+        </button>
+
+        <!-- Language Selector (visible when recording or transcript exists) -->
+        @if ((voiceState$ | async)?.transcript || (voiceState$ | async)?.isRecording) {
+          <mat-form-field appearance="outline" class="language-selector">
+            <mat-label>Language</mat-label>
+            <mat-select [(ngModel)]="selectedLanguage" (selectionChange)="onLanguageChange()">
+              @for (lang of getLanguages() | keyvalue; track lang.key) {
+                <mat-option [value]="lang.key">{{ lang.value }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+        }
+
+        <button mat-icon-button 
+                (click)="toggleContext()" 
+                [matTooltip]="useContext ? 'Disable conversation context' : 'Enable conversation context'" 
                 [class.context-active]="useContext"
                 class="action-btn context-btn">
           <mat-icon>{{ useContext ? 'history' : 'history_toggle_off' }}</mat-icon>
         </button>
-        <button mat-icon-button class="action-btn" matTooltip="Attach file (coming soon)" disabled>
+        <button mat-icon-button 
+                class="action-btn attach-btn" 
+                matTooltip="Attach file (coming soon)" 
+                disabled>
           <mat-icon>attach_file</mat-icon>
         </button>
       </div>
+      
       <div class="right-actions">
         <span class="status-indicator" [class.active]="useContext">
           <mat-icon>{{ useContext ? 'cloud_done' : 'cloud_off' }}</mat-icon>
@@ -173,7 +253,7 @@
     @if ((voiceState$ | async)?.isRecording) {
       <div class="voice-status-message recording">
         <div class="recording-indicator"></div>
-        <span>Listening... Speak now</span>
+        <span>Recording... Click mic button to stop</span>
       </div>
     }
 
@@ -187,60 +267,66 @@
       </div>
     }
 
-    <!-- Input Container with aligned elements -->
+    <!-- Quick Actions Expandable -->
+    @if (showQuickActions) {
+      <div class="quick-actions-inline">
+        <div class="quick-action-chips">
+          <button mat-stroked-button 
+                  class="quick-chip"
+                  *ngFor="let action of quickActions"
+                  (click)="executeQuickAction(action.prompt)">
+            <mat-icon>{{ action.icon }}</mat-icon>
+            {{ action.label }}
+          </button>
+        </div>
+      </div>
+    }
+
+    <!-- Input Field with Enhanced Features -->
     <div class="input-container">
-      <!-- Microphone Button -->
-      <button mat-icon-button
-              (click)="toggleVoiceRecording()"
-              [matTooltip]="(voiceState$ | async)?.isRecording ? 'Stop recording' : 'Voice input'"
-              [class.voice-recording]="(voiceState$ | async)?.isRecording"
-              class="voice-btn"
-              type="button">
-        <mat-icon>{{ (voiceState$ | async)?.isRecording ? 'mic' : 'mic_none' }}</mat-icon>
-      </button>
-
-      <!-- Text Input -->
       <mat-form-field appearance="outline" class="message-input" [class.loading]="!!(isLoading$ | async)">
-        <input matInput
-               #messageInput
-               [formControl]="messageControl"
-               (keydown)="onKeyDown($event)"
-               [readonly]="!!(isLoading$ | async)"
-               placeholder="Type or speak your message..."
-               autocomplete="off"
-               spellcheck="false">
+        <textarea matInput
+                  #messageInput
+                  [formControl]="messageControl"
+                  (keydown)="onKeyDown($event)"
+                  (input)="adjustTextareaHeight()"
+                  [readonly]="!!(isLoading$ | async)"
+                  placeholder="Type your message here..."
+                  autocomplete="off"
+                  autocorrect="off"
+                  autocapitalize="off"
+                  spellcheck="false"></textarea>
+        <mat-hint align="start">
+          <span class="hint-icon"><mat-icon>info</mat-icon></span>
+          {{ getInputHint() }}
+        </mat-hint>
+        <mat-hint align="end">
+          {{ messageControl.value?.length || 0 }} / 2000
+        </mat-hint>
       </mat-form-field>
-
-      <!-- Send/Stop Button -->
+      
+      <!-- Send Button (visible when not loading) -->
       @if (!(isLoading$ | async)) {
         <button mat-fab
                 color="primary"
                 class="send-btn"
                 (click)="sendMessage()"
                 [disabled]="messageControl.invalid"
-                matTooltip="Send message"
-                type="button">
+                [matTooltip]="getSendButtonTooltip()">
           <mat-icon>send</mat-icon>
         </button>
-      } @else {
+      }
+      
+      <!-- Stop Button (visible when loading) -->
+      @if (isLoading$ | async) {
         <button mat-fab
                 color="warn"
                 class="stop-btn"
                 (click)="stopRequest()"
-                matTooltip="Stop"
-                type="button">
-          <mat-icon>stop</mat-icon>
+                matTooltip="Stop request">
+          <mat-icon class="stop-icon">stop</mat-icon>
         </button>
       }
-    </div>
-
-    <!-- Hints below input -->
-    <div class="input-hints">
-      <span class="hint-left">
-        <mat-icon>info</mat-icon>
-        Press Enter to send
-      </span>
-      <span class="hint-right">{{ messageControl.value?.length || 0 }} / 2000</span>
     </div>
   </div>
 </div>
