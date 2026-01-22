@@ -55,12 +55,6 @@
               class="header-btn">
          <mat-icon>refresh</mat-icon>
       </button>
-              <!-- <button mat-icon-button 
-                (click)="clearChat()"
-                matTooltip="Clear conversation"
-                class="action-btn clear-btn">
-          <mat-icon>refresh</mat-icon>
-        </button> -->
       <button mat-icon-button 
               (click)="minimizeChat($event)" 
               [matTooltip]="(state$ | async)?.size === 'minimized' ? 'Restore' : 'Minimize'" 
@@ -203,16 +197,6 @@
     <!-- Action Buttons Row -->
     <div class="input-actions-row">
       <div class="left-actions">
-        <!-- Voice Recording Button -->
-        <button mat-icon-button
-                (click)="toggleVoiceRecording()"
-                [matTooltip]="(voiceState$ | async)?.isRecording ? 'Stop recording' : 'Start voice recording'"
-                [class.voice-recording]="(voiceState$ | async)?.isRecording"
-                class="action-btn voice-btn"
-                type="button">
-          <mat-icon>{{ (voiceState$ | async)?.isRecording ? 'mic' : 'mic_none' }}</mat-icon>
-        </button>
-
         <button mat-icon-button 
                 (click)="toggleContext()" 
                 [matTooltip]="useContext ? 'Disable conversation context' : 'Enable conversation context'" 
@@ -238,9 +222,9 @@
 
     <!-- Voice Status Messages -->
     @if ((voiceState$ | async)?.isRecording) {
-      <div class="voice-status-message recording">
+       <div class="voice-status-message recording">
         <div class="recording-indicator"></div>
-        <span>Recording... Click mic button to stop</span>
+        <span>Listening... Speak now</span>
       </div>
     }
 
@@ -271,7 +255,7 @@
 
     <!-- Input Field with Enhanced Features -->
     <div class="input-container">
-      <!-- Voice Recording Button -->
+      <!-- Voice Recording Button -->  
       <button mat-icon-button
               (click)="toggleVoiceRecording()"
               [matTooltip]="(voiceState$ | async)?.isRecording ? 'Stop recording' : 'Start voice recording'"
@@ -280,6 +264,7 @@
               type="button">
         <mat-icon>{{ (voiceState$ | async)?.isRecording ? 'mic' : 'mic_none' }}</mat-icon>
       </button>
+      
       <mat-form-field appearance="outline" class="message-input" [class.loading]="!!(isLoading$ | async)">
         <textarea matInput
                   #messageInput
@@ -300,7 +285,7 @@
           {{ messageControl.value?.length || 0 }} / 2000
         </mat-hint>
       </mat-form-field>
-      
+        
       <!-- Send Button (visible when not loading) -->
       @if (!(isLoading$ | async)) {
         <button mat-fab
