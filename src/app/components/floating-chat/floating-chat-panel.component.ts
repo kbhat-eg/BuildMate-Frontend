@@ -89,7 +89,7 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked {
 
   // Voice properties
   voiceState$: Observable<VoiceState>;
-  selectedLanguage = 'en-US';
+  selectedLanguage: string;
   currentVoiceState: VoiceState = {
     isRecording: false,
     isProcessing: false,
@@ -110,6 +110,7 @@ export class FloatingChatPanelComponent implements OnInit, AfterViewChecked {
     this.messages$ = this.chatService.messages$;
     this.isLoading$ = this.chatService.isLoading$;
     this.voiceState$ = this.voiceService.voiceState$;
+    this.selectedLanguage = this.voiceService.getDefaultLanguage();
   }
 
   ngOnInit(): void {

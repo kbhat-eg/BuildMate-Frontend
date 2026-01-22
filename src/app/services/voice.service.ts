@@ -83,25 +83,25 @@ export class VoiceService {
 
   voiceState$ = this.voiceState.asObservable();
 
-  // Nordic languages only
+  // Nordic languages and English
   supportedLanguages: { [key: string]: string } = {
+    'en-US': 'English (US)',
+    'en-GB': 'English (UK)',
     'nb-NO': 'Norwegian Bokmål',
     'nn-NO': 'Norwegian Nynorsk',
     'sv-SE': 'Swedish',
     'da-DK': 'Danish',
     'fi-FI': 'Finnish',
-    'is-IS': 'Icelandic',
-    'en-US': 'English (US)',
-    'en-GB': 'English (UK)'
+    'is-IS': 'Icelandic'
   };
 
   constructor() {
     this.initializeWebSpeechAPI();
   }
 
-  // Get user's browser language as default (Nordic focus)
+  // Get user's browser language as default
   getDefaultLanguage(): string {
-    const browserLang = navigator.language || 'nb-NO';
+    const browserLang = navigator.language || 'en-US';
     // Check if browser language is supported
     if (this.supportedLanguages[browserLang]) {
       return browserLang;
@@ -109,8 +109,8 @@ export class VoiceService {
     // Try to match language prefix
     const langPrefix = browserLang.split('-')[0];
     const matchedLang = Object.keys(this.supportedLanguages).find(key => key.startsWith(langPrefix + '-'));
-    // Default to Norwegian Bokmål
-    return matchedLang || 'nb-NO';
+    // Default to English US if no match
+    return matchedLang || 'en-US';
   }
 
   private initializeWebSpeechAPI(): void {
